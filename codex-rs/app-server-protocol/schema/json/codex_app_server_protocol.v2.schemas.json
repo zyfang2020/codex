@@ -4176,6 +4176,16 @@
             }
           ]
         },
+        "reasoning_summary_delivery": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ReasoningSummaryDelivery"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "review_model": {
           "type": [
             "string",
@@ -11223,6 +11233,15 @@
           "type": "string"
         }
       ]
+    },
+    "ReasoningSummaryDelivery": {
+      "description": "Controls when reasoning summaries are delivered relative to later response items.",
+      "enum": [
+        "sequential",
+        "concurrent",
+        "concurrent_cutoff"
+      ],
+      "type": "string"
     },
     "ReasoningSummaryPartAddedNotification": {
       "$schema": "http://json-schema.org/draft-07/schema#",

@@ -21,6 +21,7 @@ use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
 use codex_protocol::account::PlanType;
 use codex_protocol::config_types::ReasoningSummary;
+use codex_protocol::config_types::ReasoningSummaryDelivery;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
@@ -206,6 +207,43 @@ async fn responses_websocket_streams_request() {
     assert!(stream_request_start_ms > 0);
 
     server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn responses_websocket_sends_reasoning_summary_delivery() {
+    skip_if_no_network!();
+
+    let server = start_websocket_server(vec![vec![vec![
+        ev_response_created("resp-1"),
+        ev_completed("resp-1"),
+    ]]])
+    .await;
+
+    let mut provider =
+        ModelProviderInfo::create_openai_provider(Some(format!("{}/v1", server.uri())));
+    provider.request_max_retries = Some(0);
+    provider.stream_max_retries = Some(0);
+    provider.stream_idle_timeout_ms = Some(5_000);
+    let harness = websocket_harness_with_provider_options(
+        provider,
+        /*runtime_metrics_enabled*/ false,
+        Some(ReasoningSummaryDelivery::ConcurrentCutoff),
+    )
+    .await;
+    let mut client_session = harness.client.new_session();
+
+    stream_until_complete(
+        &mut client_session,
+        &harness,
+        &prompt_with_input(vec![message_item("hello")]),
+    )
+    .await;
+
+    let body = server.single_connection()[0].body_json();
+    assert_eq!(
+        body["stream_options"],
+        json!({ "reasoning_summary_delivery": "concurrent_cutoff" })
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -2144,17 +2182,23 @@ async fn websocket_harness_with_options(
     server: &WebSocketTestServer,
     runtime_metrics_enabled: bool,
 ) -> WebsocketTestHarness {
-    websocket_harness_with_provider_options(websocket_provider(server), runtime_metrics_enabled)
-        .await
+    websocket_harness_with_provider_options(
+        websocket_provider(server),
+        runtime_metrics_enabled,
+        /*reasoning_summary_delivery*/ None,
+    )
+    .await
 }
 
 async fn websocket_harness_with_provider_options(
     provider: ModelProviderInfo,
     runtime_metrics_enabled: bool,
+    reasoning_summary_delivery: Option<ReasoningSummaryDelivery>,
 ) -> WebsocketTestHarness {
     let codex_home = TempDir::new().unwrap();
     let mut config = load_default_config_for_test(&codex_home).await;
     config.model = Some(MODEL.to_string());
+    config.reasoning_summary_delivery = reasoning_summary_delivery;
     if runtime_metrics_enabled {
         config
             .features
@@ -2196,6 +2240,7 @@ async fn websocket_harness_with_provider_options(
         SessionSource::Exec,
         "test_originator".to_string(),
         config.model_verbosity,
+        config.reasoning_summary_delivery,
         /*enable_request_compression*/ false,
         runtime_metrics_enabled,
         /*beta_features_header*/ None,
