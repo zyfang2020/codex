@@ -201,7 +201,7 @@ struct ModelClientState {
     session_source: SessionSource,
     originator: String,
     model_verbosity: Option<VerbosityConfig>,
-    reasoning_summary_delivery: Option<ReasoningSummaryDelivery>,
+    reasoning_summary_delivery: StdMutex<Option<ReasoningSummaryDelivery>>,
     enable_request_compression: bool,
     include_timing_metrics: bool,
     beta_features_header: Option<String>,
@@ -434,7 +434,7 @@ impl ModelClient {
                 session_source,
                 originator,
                 model_verbosity,
-                reasoning_summary_delivery,
+                reasoning_summary_delivery: StdMutex::new(reasoning_summary_delivery),
                 enable_request_compression,
                 include_timing_metrics,
                 beta_features_header,
@@ -478,6 +478,17 @@ impl ModelClient {
 
     pub(crate) fn auth_manager(&self) -> Option<Arc<AuthManager>> {
         self.state.provider.auth_manager()
+    }
+
+    pub(crate) fn set_reasoning_summary_delivery(
+        &self,
+        reasoning_summary_delivery: ReasoningSummaryDelivery,
+    ) {
+        *self
+            .state
+            .reasoning_summary_delivery
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(reasoning_summary_delivery);
     }
 
     fn take_cached_websocket_session(&self) -> WebsocketSession {
@@ -881,13 +892,17 @@ impl ModelClient {
         );
         let prompt_cache_key = Some(self.prompt_cache_key());
         let service_tier = model_info.service_tier_for_request(service_tier);
-        let stream_options = self
+        let reasoning_summary_delivery = *self
             .state
             .reasoning_summary_delivery
-            .filter(|_| is_openai)
-            .map(|reasoning_summary_delivery| StreamOptions {
-                reasoning_summary_delivery,
-            });
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let stream_options =
+            reasoning_summary_delivery
+                .filter(|_| is_openai)
+                .map(|reasoning_summary_delivery| StreamOptions {
+                    reasoning_summary_delivery,
+                });
         let request = ResponsesApiRequest {
             model: model_info.slug.clone(),
             instructions,

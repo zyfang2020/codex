@@ -10,6 +10,7 @@ use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
+use codex_protocol::config_types::ReasoningSummaryDelivery;
 use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
@@ -193,6 +194,17 @@ impl CodexThread {
 
     pub async fn submit(&self, op: Op) -> CodexResult<String> {
         self.codex.submit(op).await
+    }
+
+    pub fn set_reasoning_summary_delivery(
+        &self,
+        reasoning_summary_delivery: ReasoningSummaryDelivery,
+    ) {
+        self.codex
+            .session
+            .services
+            .model_client
+            .set_reasoning_summary_delivery(reasoning_summary_delivery);
     }
 
     /// Returns the session telemetry handle for thread-scoped production instrumentation.

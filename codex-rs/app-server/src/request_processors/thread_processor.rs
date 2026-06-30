@@ -3,6 +3,7 @@ use crate::error_code::method_not_found;
 use codex_app_server_protocol::SelectedCapabilityRoot;
 use codex_extension_api::ExtensionDataInit;
 use codex_protocol::config_types::MultiAgentMode;
+use codex_protocol::config_types::ReasoningSummaryDelivery;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
 use codex_protocol::protocol::ThreadHistoryMode;
@@ -128,7 +129,11 @@ fn collect_resume_override_mismatches(
         ));
     }
 
-    if request.config.is_some() {
+    if request
+        .config
+        .as_ref()
+        .is_some_and(|config| config.keys().any(|key| key != "reasoning_summary_delivery"))
+    {
         mismatch_details
             .push("config overrides were provided and ignored while running".to_string());
     }
@@ -3001,6 +3006,22 @@ impl ThreadRequestProcessor {
         };
 
         if let Some((existing_thread_id, existing_thread, mut source_thread)) = running_thread {
+            if let Some(reasoning_summary_delivery) = params
+                .config
+                .as_ref()
+                .and_then(|config| config.get("reasoning_summary_delivery"))
+            {
+                let reasoning_summary_delivery =
+                    serde_json::from_value::<ReasoningSummaryDelivery>(
+                        reasoning_summary_delivery.clone(),
+                    )
+                    .map_err(|error| {
+                        invalid_request(format!(
+                            "invalid reasoning_summary_delivery override: {error}"
+                        ))
+                    })?;
+                existing_thread.set_reasoning_summary_delivery(reasoning_summary_delivery);
+            }
             let existing_thread_rollout_path = existing_thread.rollout_path();
             let active_path = existing_thread_rollout_path
                 .as_ref()
