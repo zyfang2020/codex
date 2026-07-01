@@ -1,0 +1,94 @@
+name: build-windows-codex-local
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  LIBSQLITE3_FLAGS: "SQLITE_DISABLE_INTRINSIC"
+
+jobs:
+  build:
+    name: Build codex.exe
+    runs-on: windows-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: codex-rs
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: openai/codex
+          ref: rust-v0.142.5
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: codex-rs -> target
+
+      - name: Patch stream reconnect retries
+        shell: pwsh
+        run: |
+          $provider = "model-provider-info\src\lib.rs"
+          $tests = "model-provider-info\src\model_provider_info_tests.rs"
+
+          (Get-Content -Raw $provider).
+            Replace("const DEFAULT_STREAM_MAX_RETRIES: u64 = 5;", "const DEFAULT_STREAM_MAX_RETRIES: u64 = 100;") |
+            Set-Content -NoNewline $provider
+
+          $testContent = Get-Content -Raw $tests
+          if (-not $testContent.Contains("fn test_stream_max_retries_defaults_to_cap()")) {
+            $insert = @(
+              "#[test]",
+              "fn test_stream_max_retries_defaults_to_cap() {",
+              "    let provider = ModelProviderInfo::default();",
+              "",
+              "    assert_eq!(provider.stream_max_retries(), MAX_STREAM_MAX_RETRIES);",
+              "}",
+              "",
+              "#[test]",
+              "fn test_stream_max_retries_is_capped() {",
+              "    let provider = ModelProviderInfo {",
+              "        stream_max_retries: Some(MAX_STREAM_MAX_RETRIES + 1),",
+              "        ..ModelProviderInfo::default()",
+              "    };",
+              "",
+              "    assert_eq!(provider.stream_max_retries(), MAX_STREAM_MAX_RETRIES);",
+              "}",
+              ""
+            ) -join "`n"
+            $testContent = $testContent.Replace("#[test]`nfn test_supports_remote_compaction_for_openai()", $insert + "#[test]`nfn test_supports_remote_compaction_for_openai()")
+            Set-Content -NoNewline $tests $testContent
+          }
+
+      - name: Verify stream retry default
+        shell: pwsh
+        run: cargo test -p codex-model-provider-info test_stream_max_retries --lib
+
+      - name: Build release codex.exe
+        shell: pwsh
+        run: cargo build -p codex-cli --bin codex --release
+
+      - name: Stage artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Copy-Item target\release\codex.exe artifact\codex.exe
+          if (Test-Path target\release\codex.pdb) {
+            Copy-Item target\release\codex.pdb artifact\codex.pdb
+          }
+          .\artifact\codex.exe --version
+
+      - name: Upload codex.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-windows-x64-local
+          path: codex-rs/artifact/*
+          if-no-files-found: error
