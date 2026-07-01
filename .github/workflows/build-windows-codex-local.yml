@@ -38,12 +38,16 @@ jobs:
         run: |
           $provider = "model-provider-info\src\lib.rs"
           $tests = "model-provider-info\src\model_provider_info_tests.rs"
+          $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
-          (Get-Content -Raw $provider).
-            Replace("const DEFAULT_STREAM_MAX_RETRIES: u64 = 5;", "const DEFAULT_STREAM_MAX_RETRIES: u64 = 100;") |
-            Set-Content -NoNewline $provider
+          $providerContent = [IO.File]::ReadAllText((Resolve-Path $provider))
+          $providerContent = $providerContent.Replace("const DEFAULT_STREAM_MAX_RETRIES: u64 = 5;", "const DEFAULT_STREAM_MAX_RETRIES: u64 = 100;")
+          if (-not $providerContent.Contains("const DEFAULT_STREAM_MAX_RETRIES: u64 = 100;")) {
+            throw "Failed to patch DEFAULT_STREAM_MAX_RETRIES"
+          }
+          [IO.File]::WriteAllText((Resolve-Path $provider), $providerContent, $utf8NoBom)
 
-          $testContent = Get-Content -Raw $tests
+          $testContent = [IO.File]::ReadAllText((Resolve-Path $tests))
           if (-not $testContent.Contains("fn test_stream_max_retries_defaults_to_cap()")) {
             $insert = @(
               "#[test]",
@@ -63,9 +67,16 @@ jobs:
               "    assert_eq!(provider.stream_max_retries(), MAX_STREAM_MAX_RETRIES);",
               "}",
               ""
-            ) -join "`n"
-            $testContent = $testContent.Replace("#[test]`nfn test_supports_remote_compaction_for_openai()", $insert + "#[test]`nfn test_supports_remote_compaction_for_openai()")
-            Set-Content -NoNewline $tests $testContent
+            ) -join [Environment]::NewLine
+            $marker = "#[test]`r`nfn test_supports_remote_compaction_for_openai()"
+            if (-not $testContent.Contains($marker)) {
+              $marker = "#[test]`nfn test_supports_remote_compaction_for_openai()"
+            }
+            if (-not $testContent.Contains($marker)) {
+              throw "Failed to find insertion point for stream retry tests"
+            }
+            $testContent = $testContent.Replace($marker, $insert + $marker)
+            [IO.File]::WriteAllText((Resolve-Path $tests), $testContent, $utf8NoBom)
           }
 
       - name: Verify stream retry default
