@@ -1096,13 +1096,13 @@ async fn interleaved_reasoning_summary_events_keep_reasoning_item_metadata() -> 
     let stream = sse(vec![
         ev_response_created("resp-1"),
         ev_reasoning_item_added("reasoning-1", &[""]),
-        ev_reasoning_summary_part_added("reasoning-1", 0),
-        ev_reasoning_summary_text_delta("reasoning-1", 0, "step one"),
+        ev_reasoning_summary_part_added("reasoning-1", /*summary_index*/ 0),
+        ev_reasoning_summary_text_delta("reasoning-1", /*summary_index*/ 0, "step one"),
         ev_message_item_added("message-1", ""),
         ev_output_text_delta("Done"),
         ev_assistant_message("message-1", "Done"),
-        ev_reasoning_summary_part_added("reasoning-1", 1),
-        ev_reasoning_summary_text_delta("reasoning-1", 1, "step two"),
+        ev_reasoning_summary_part_added("reasoning-1", /*summary_index*/ 1),
+        ev_reasoning_summary_text_delta("reasoning-1", /*summary_index*/ 1, "step two"),
         ev_reasoning_item("reasoning-1", &["step one", "step two"], &[]),
         ev_completed("resp-1"),
     ]);
