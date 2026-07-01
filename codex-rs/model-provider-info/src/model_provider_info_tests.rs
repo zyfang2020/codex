@@ -133,6 +133,22 @@ supports_websockets = true
 }
 
 #[test]
+fn test_stream_max_retries_defaults_to_cap() {
+    let provider = ModelProviderInfo::default();
+
+    assert_eq!(provider.stream_max_retries(), MAX_STREAM_MAX_RETRIES);
+}
+
+#[test]
+fn test_stream_max_retries_is_capped() {
+    let provider = ModelProviderInfo {
+        stream_max_retries: Some(MAX_STREAM_MAX_RETRIES + 1),
+        ..ModelProviderInfo::default()
+    };
+
+    assert_eq!(provider.stream_max_retries(), MAX_STREAM_MAX_RETRIES);
+}
+#[test]
 fn test_supports_remote_compaction_for_openai() {
     let provider = ModelProviderInfo::create_openai_provider(/*base_url*/ None);
 
