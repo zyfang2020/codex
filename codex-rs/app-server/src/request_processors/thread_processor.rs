@@ -3012,7 +3012,7 @@ impl ThreadRequestProcessor {
                 .and_then(|config| config.get("reasoning_summary_delivery"))
             {
                 let reasoning_summary_delivery =
-                    serde_json::from_value::<ReasoningSummaryDelivery>(
+                    serde_json::from_value::<Option<ReasoningSummaryDelivery>>(
                         reasoning_summary_delivery.clone(),
                     )
                     .map_err(|error| {
@@ -3020,7 +3020,14 @@ impl ThreadRequestProcessor {
                             "invalid reasoning_summary_delivery override: {error}"
                         ))
                     })?;
-                existing_thread.set_reasoning_summary_delivery(reasoning_summary_delivery);
+                existing_thread
+                    .set_reasoning_summary_delivery(reasoning_summary_delivery)
+                    .await
+                    .map_err(|error| {
+                        invalid_request(format!(
+                            "invalid reasoning_summary_delivery override: {error}"
+                        ))
+                    })?;
             }
             let existing_thread_rollout_path = existing_thread.rollout_path();
             let active_path = existing_thread_rollout_path

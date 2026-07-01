@@ -3059,8 +3059,10 @@ async fn thread_resume_rejoins_running_thread_even_with_override_mismatch() -> R
     .await??;
 
     let requests = response_mock.requests();
+    assert_eq!(requests.len(), 3);
+    assert!(requests[1].body_json().get("stream_options").is_none());
     assert_eq!(
-        requests.last().expect("expected third request").body_json()["stream_options"],
+        requests[2].body_json()["stream_options"],
         json!({ "reasoning_summary_delivery": "concurrent_cutoff" })
     );
 

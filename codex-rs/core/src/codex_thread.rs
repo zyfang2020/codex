@@ -196,15 +196,17 @@ impl CodexThread {
         self.codex.submit(op).await
     }
 
-    pub fn set_reasoning_summary_delivery(
+    pub async fn set_reasoning_summary_delivery(
         &self,
-        reasoning_summary_delivery: ReasoningSummaryDelivery,
-    ) {
+        reasoning_summary_delivery: Option<ReasoningSummaryDelivery>,
+    ) -> ConstraintResult<()> {
         self.codex
             .session
-            .services
-            .model_client
-            .set_reasoning_summary_delivery(reasoning_summary_delivery);
+            .update_settings(SessionSettingsUpdate {
+                reasoning_summary_delivery: Some(reasoning_summary_delivery),
+                ..Default::default()
+            })
+            .await
     }
 
     /// Returns the session telemetry handle for thread-scoped production instrumentation.
