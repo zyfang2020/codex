@@ -2,6 +2,15 @@ name: build-windows-codex-local
 
 on:
   workflow_dispatch:
+    inputs:
+      codex_ref:
+        description: "openai/codex ref to build, for example rust-v0.142.5"
+        required: true
+        default: "rust-v0.142.5"
+      reconnect_attempts:
+        description: "Responses stream reconnect attempts to patch into codex.exe"
+        required: true
+        default: "100"
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
@@ -23,7 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: openai/codex
-          ref: rust-v0.142.5
+          ref: ${{ inputs.codex_ref }}
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -35,15 +44,25 @@ jobs:
 
       - name: Patch stream reconnect retries
         shell: pwsh
+        env:
+          RECONNECT_ATTEMPTS: ${{ inputs.reconnect_attempts }}
         run: |
           $provider = "model-provider-info\src\lib.rs"
           $tests = "model-provider-info\src\model_provider_info_tests.rs"
           $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+          $attempts = [int]$env:RECONNECT_ATTEMPTS
+          if ($attempts -lt 0) {
+            throw "reconnect_attempts must be non-negative"
+          }
 
           $providerContent = [IO.File]::ReadAllText((Resolve-Path $provider))
-          $providerContent = $providerContent.Replace("const DEFAULT_STREAM_MAX_RETRIES: u64 = 5;", "const DEFAULT_STREAM_MAX_RETRIES: u64 = 100;")
-          if (-not $providerContent.Contains("const DEFAULT_STREAM_MAX_RETRIES: u64 = 100;")) {
+          $providerContent = [regex]::Replace($providerContent, "const DEFAULT_STREAM_MAX_RETRIES: u64 = \d+;", "const DEFAULT_STREAM_MAX_RETRIES: u64 = $attempts;")
+          $providerContent = [regex]::Replace($providerContent, "const MAX_STREAM_MAX_RETRIES: u64 = \d+;", "const MAX_STREAM_MAX_RETRIES: u64 = $attempts;")
+          if (-not $providerContent.Contains("const DEFAULT_STREAM_MAX_RETRIES: u64 = $attempts;")) {
             throw "Failed to patch DEFAULT_STREAM_MAX_RETRIES"
+          }
+          if (-not $providerContent.Contains("const MAX_STREAM_MAX_RETRIES: u64 = $attempts;")) {
+            throw "Failed to patch MAX_STREAM_MAX_RETRIES"
           }
           [IO.File]::WriteAllText((Resolve-Path $provider), $providerContent, $utf8NoBom)
 
@@ -54,17 +73,17 @@ jobs:
               "fn test_stream_max_retries_defaults_to_cap() {",
               "    let provider = ModelProviderInfo::default();",
               "",
-              "    assert_eq!(provider.stream_max_retries(), MAX_STREAM_MAX_RETRIES);",
+              "    assert_eq!(provider.stream_max_retries(), $attempts);",
               "}",
               "",
               "#[test]",
               "fn test_stream_max_retries_is_capped() {",
               "    let provider = ModelProviderInfo {",
-              "        stream_max_retries: Some(MAX_STREAM_MAX_RETRIES + 1),",
+              "        stream_max_retries: Some($attempts + 1),",
               "        ..ModelProviderInfo::default()",
               "    };",
               "",
-              "    assert_eq!(provider.stream_max_retries(), MAX_STREAM_MAX_RETRIES);",
+              "    assert_eq!(provider.stream_max_retries(), $attempts);",
               "}",
               ""
             ) -join [Environment]::NewLine
